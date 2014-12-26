@@ -23,6 +23,9 @@
 #include <pcl/PCLPointCloud2.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <visualization_msgs/Marker.h>
+#include "geometry_msgs/PoseWithCovarianceStamped.h"
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <geometry_msgs/Pose2D.h>
 
 char tstamp [80];	//Timestamp
 using namespace sensor_msgs;
@@ -35,8 +38,8 @@ ros::Time initial;
 int numimage=0;
 int lowercolor,uppercolor,hue1,hue2,lt1,lt2;
 
+void callback(const ImageConstPtr& image1, const sensor_msgs::PointCloud2ConstPtr& input, const geometry_msgs::PoseWithCovarianceStampedConstPtr& data_in , ros::Publisher &pub , ros::Publisher &marker_pub , ros::Publisher &final_pose)
 
-void callback(const ImageConstPtr& image1, const sensor_msgs::PointCloud2ConstPtr& input,ros::Publisher &pub,ros::Publisher &marker_pub)
 {
 
 	pcl::PCLPointCloud2 pcl_pc;
@@ -136,16 +139,33 @@ void callback(const ImageConstPtr& image1, const sensor_msgs::PointCloud2ConstPt
 	//Pose msg publish// Publishing pose of person in Kinect's Refernece Frame under the topic person_pose
 	float inx,iny,intheta;
 	geometry_msgs::Pose2D msg;
-	int count=0;
-	stringstream ss;
-	ss << "hello world " << count;
-	//	msg.data = ss.str();	
 	msg.x=xcor;
 	msg.y=zcor;
 	msg.theta=timenow;
 	pub.publish(msg);
-	count++;
 	
+	//Final Pose
+	//Get robot's pose data from amcl_pose 
+	 geometry_msgs::Point robot_pose;
+         robot_pose.x = data_in->pose.pose.position.x;
+         robot_pose.y = data_in->pose.pose.position.y;
+         robot_pose.z = data_in->pose.pose.position.z;
+
+	 geometry_msgs::Quaternion robot_orient;
+         robot_orient.x = data_in->pose.pose.orientation.x;
+         robot_orient.y = data_in->pose.pose.orientation.y;
+         robot_orient.z = data_in->pose.pose.orientation.z;
+         robot_orient.w = data_in->pose.pose.orientation.z;
+
+	 //Perform Transformations : xcor,zcor are the person's cordinate w.r.t kinect in x-z plane. [Height of person is along y-axis and is not useful while finding the trajectory, x-z plane is the plane of ground in which person moves].
+	
+	geometry_msgs::Pose2D msg2;
+	msg2.x=xcor;	//Put the modifeid x-cordinate here
+	msg2.y=zcor;	//Put modifed z-cordinate here
+	msg2.theta=timenow;	//Time
+	final_pose.publish(msg2);
+
+
 
 	//Visualization Marker// Marking the position in Kinect's Frame of reference on Rviz
 
@@ -160,9 +180,9 @@ void callback(const ImageConstPtr& image1, const sensor_msgs::PointCloud2ConstPt
 	marker.action = visualization_msgs::Marker::ADD;
 
 	// Set the pose of the marker.  
-	marker.pose.position.x = xcor;
-	marker.pose.position.y = ycor; //should be set to same y-axis as that of sick laser
-	marker.pose.position.z = zcor;
+	marker.pose.position.x = xcor;	//change to the modifed corinate
+	marker.pose.position.y = ycor;  //should be set to same y-axis as that of sick laser
+	marker.pose.position.z = zcor;  //change to the modified cordinate
 	marker.pose.orientation.x = 0.0;
 	marker.pose.orientation.y = 0.0;
 	marker.pose.orientation.z = 0.0;
@@ -214,23 +234,26 @@ int main(int argc, char** argv)
 	ros::init(argc, argv, "vision_node");
 
 	ros::NodeHandle nh;
-	ros::Publisher pub; //For person_pose
+	ros::Publisher pub; //For person pose relative to kinect
 	ros::Publisher marker_pub; //For marker
+	ros::Publisher final_pose; //for pose of person relative to world coordinate frame
 
 	initial = ros::Time::now();
 
 	//Subscribed Topics
 	message_filters::Subscriber<Image> image1_sub(nh, "/camera/rgb/image_color", 1);
 	message_filters::Subscriber<sensor_msgs::PointCloud2> cloud_sub(nh,"/camera/depth/points", 1);
+message_filters::Subscriber<geometry_msgs::PoseWithCovarianceStamped> pose_sub(nh,"amcl_pose",10);
 
-	typedef sync_policies::ApproximateTime<Image,sensor_msgs::PointCloud2> MySyncPolicy;
+	typedef sync_policies::ApproximateTime<Image,sensor_msgs::PointCloud2,geometry_msgs::PoseWithCovarianceStamped> MySyncPolicy;
 
 	//Published Topics
 	pub=nh.advertise<geometry_msgs::Pose2D>("person_pose", 1000);
 	marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 1);
+	final_pose=nh.advertise<geometry_msgs::Pose2D>("final_pose",1000);
 
-	Synchronizer<MySyncPolicy> sync(MySyncPolicy(100), image1_sub,cloud_sub);
-	sync.registerCallback(boost::bind(&callback, _1, _2,pub,marker_pub));
+	Synchronizer<MySyncPolicy> sync(MySyncPolicy(100), image1_sub,cloud_sub,pose_sub);
+	sync.registerCallback(boost::bind(&callback, _1, _2, _3,pub,marker_pub,final_pose));
 
 	ros::spin();
 	return 0;

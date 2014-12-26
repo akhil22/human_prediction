@@ -8,7 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   geometry_msgs
   #opencv2
-  #pcl
+  pcl
   pcl_ros
   roscpp
   rospy
@@ -112,6 +112,7 @@ ${Boost_INCLUDE_DIRS}
 
 ## Declare a cpp executable
 add_executable(sync src/sync.cpp)
+add_executable(sync_with_amcl src/sync_with_amcl.cpp)
 #add_executable(object src/showobject.cpp)
 
 ## Add cmake target dependencies of the executable/library
@@ -120,6 +121,7 @@ add_executable(sync src/sync.cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(sync ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} )
+target_link_libraries(sync_with_amcl ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} )
 #target_link_libraries(object ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 #############
 ## Install ##
