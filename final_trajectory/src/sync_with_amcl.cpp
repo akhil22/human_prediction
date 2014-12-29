@@ -26,6 +26,10 @@
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <geometry_msgs/Pose2D.h>
+#include <tf/transform_broadcaster.h>
+#include <geometry_msgs/PoseStamped.h>
+#include "geometry_msgs/PoseStamped.h"
+#include "tf_conversions/tf_eigen.h"
 
 char tstamp [80];	//Timestamp
 using namespace sensor_msgs;
@@ -143,25 +147,46 @@ void callback(const ImageConstPtr& image1, const sensor_msgs::PointCloud2ConstPt
 	msg.y=zcor;
 	msg.theta=timenow;
 	pub.publish(msg);
-	
+
 	//Final Pose
 	//Get robot's pose data from amcl_pose 
-	 geometry_msgs::Point robot_pose;
-         robot_pose.x = data_in->pose.pose.position.x;
-         robot_pose.y = data_in->pose.pose.position.y;
-         robot_pose.z = data_in->pose.pose.position.z;
 
-	 geometry_msgs::Quaternion robot_orient;
-         robot_orient.x = data_in->pose.pose.orientation.x;
-         robot_orient.y = data_in->pose.pose.orientation.y;
-         robot_orient.z = data_in->pose.pose.orientation.z;
-         robot_orient.w = data_in->pose.pose.orientation.z;
-
-	 //Perform Transformations : xcor,zcor are the person's cordinate w.r.t kinect in x-z plane. [Height of person is along y-axis and is not useful while finding the trajectory, x-z plane is the plane of ground in which person moves].
+//	geometry_msgs::Point robot_pose;
+//	robot_pose.x = data_in->pose.pose.position.x;
+//	geometry_msgs::Quaternion robot_orient;
+//	robot_orient.x = data_in->pose.pose.orientation.x;
 	
+	//Perform Transformations : xcor,zcor are the person's cordinate w.r.t kinect in x-z plane. [Height of person is along y-axis and is not useful while finding the trajectory, x-z plane is the plane of ground in which person moves].
+	tf::Transform robo_world;
+
+	robo_world.setOrigin( tf::Vector3(data_in->pose.pose.position.x, data_in->pose.pose.position.y,data_in->pose.pose.position.z ));
+
+	robo_world.setRotation( tf::Quaternion(data_in->pose.pose.orientation.x,data_in->pose.pose.orientation.y,data_in->pose.pose.orientation.z,data_in->pose.pose.orientation.w ));
+
+	tf::Transform camera_robo;
+	camera_robo.setOrigin( tf::Vector3(0.0,0.25,0.0) );
+	camera_robo.setRotation( tf::Quaternion(0,0,0,1) );
+
+	tf::Transform person_camera;
+	person_camera.setOrigin( tf::Vector3(xcor,ycor,zcor) );
+	person_camera.setRotation( tf::Quaternion(0,0,0,1) );
+
+	tf::Transform final_transform;
+	final_transform = robo_world * camera_robo;
+	final_transform = final_transform * person_camera ;
+
+	tf::Vector3 person_posev;
+	person_posev = final_transform.getOrigin();
+
+	geometry_msgs::Point person_pose;
+	person_pose.x = person_posev[0];
+	person_pose.y = person_posev[1];
+	person_pose.z = person_posev[2];
+	/////////////////////////
+		
 	geometry_msgs::Pose2D msg2;
-	msg2.x=xcor;	//Put the modifeid x-cordinate here
-	msg2.y=zcor;	//Put modifed z-cordinate here
+	msg2.x=person_pose.x;	//Put the modified x-cordinate here
+	msg2.y=person_pose.z;	//Put modifed z-cordinate here
 	msg2.theta=timenow;	//Time
 	final_pose.publish(msg2);
 
@@ -180,18 +205,18 @@ void callback(const ImageConstPtr& image1, const sensor_msgs::PointCloud2ConstPt
 	marker.action = visualization_msgs::Marker::ADD;
 
 	// Set the pose of the marker.  
-	marker.pose.position.x = xcor;	//change to the modifed corinate
-	marker.pose.position.y = ycor;  //should be set to same y-axis as that of sick laser
-	marker.pose.position.z = zcor;  //change to the modified cordinate
+	marker.pose.position.x = person_pose.x;	//change to the modifed corinate
+	marker.pose.position.y = person_pose.y; //need to be set as same y-axis of sick laser
+	marker.pose.position.z = person_pose.z;  //change to the modified cordinate
 	marker.pose.orientation.x = 0.0;
 	marker.pose.orientation.y = 0.0;
 	marker.pose.orientation.z = 0.0;
 	marker.pose.orientation.w = 1.0;
 
 	// Set the scale of the marker. 1x1x1 here means 1m on a side
-	marker.scale.x = 0.1;
-	marker.scale.y = 0.1;
-	marker.scale.z = 0.1;
+	marker.scale.x = 0.2;
+	marker.scale.y = 0.2;
+	marker.scale.z = 0.2;
 
 	// Set the color 
 	marker.color.r = 0.0f;
@@ -214,7 +239,7 @@ int main(int argc, char** argv)
 	time (&rawtime);
 	timeinfo = localtime (&rawtime);
 	strftime (tstamp,80,"%c",timeinfo);
-	
+
 	if (argc==3){
 		lowercolor=atoi(argv[1]);uppercolor=atoi(argv[2]);hue1=90;hue2=255;lt1=80;lt2=255;	
 	}
@@ -230,7 +255,7 @@ int main(int argc, char** argv)
 
 	puts (tstamp);
 	sleep(3);
-	
+
 	ros::init(argc, argv, "vision_node");
 
 	ros::NodeHandle nh;
@@ -243,7 +268,7 @@ int main(int argc, char** argv)
 	//Subscribed Topics
 	message_filters::Subscriber<Image> image1_sub(nh, "/camera/rgb/image_color", 1);
 	message_filters::Subscriber<sensor_msgs::PointCloud2> cloud_sub(nh,"/camera/depth/points", 1);
-message_filters::Subscriber<geometry_msgs::PoseWithCovarianceStamped> pose_sub(nh,"amcl_pose",10);
+	message_filters::Subscriber<geometry_msgs::PoseWithCovarianceStamped> pose_sub(nh,"amcl_pose",10);
 
 	typedef sync_policies::ApproximateTime<Image,sensor_msgs::PointCloud2,geometry_msgs::PoseWithCovarianceStamped> MySyncPolicy;
 
